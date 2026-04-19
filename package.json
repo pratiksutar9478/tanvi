@@ -4,7 +4,8 @@
   "description": "SpeakBoost Pro with Neon PostgreSQL backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "node -e \"console.log('No build step required for static + serverless API deployment')\""
   },
   "keywords": [
     "speaking",
