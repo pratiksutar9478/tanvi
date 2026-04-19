@@ -5,8 +5,12 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MAX_PORT_ATTEMPTS = 20;
 
+// Serve static files from public folder
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// Database setup
 if (!process.env.DATABASE_URL) {
     console.error('DATABASE_URL is missing. Create a .env file with your Neon PostgreSQL connection string.');
     process.exit(1);
@@ -48,6 +52,35 @@ async function initDatabase() {
             confidence INTEGER NOT NULL,
             clarity INTEGER NOT NULL,
             fluency INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_practice_sessions_user_email
+        ON practice_sessions(user_email)
+    `);
+}
+
+// API routes
+app.use('/api', require('./api/health.js'));
+app.use('/api', require('./api/signup.js'));
+app.use('/api', require('./api/login.js'));
+
+// Serve index.html for all unmatched routes (SPA fallback)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Initialize and start server
+initDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`✅ Server running on port ${PORT}`);
+    });
+}).catch(err => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+});
             created_at TIMESTAMP DEFAULT NOW()
         )
     `);
