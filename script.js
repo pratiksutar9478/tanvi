@@ -27,6 +27,29 @@ function showNotification(msg, type) {
     setTimeout(() => n.remove(), 3000); 
 }
 
+async function savePracticeSessionToServer(sessionPayload) {
+    try {
+        const response = await fetch('/api/practice-sessions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(sessionPayload)
+        });
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.message || 'Failed to save to server');
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Remote save failed:', error);
+        showNotification('⚠️ Saved locally, but cloud sync failed.', 'error');
+        return false;
+    }
+}
+
 // ============ TASK DATABASE ============
 const taskDatabase = {
     Fluency: { 
@@ -406,9 +429,32 @@ document.getElementById('analyzeVoiceBtn').addEventListener('click', () => {
 document.getElementById('submitPracticeBtn').addEventListener('click', () => {
     const reflection = document.getElementById('reflectionField').value.trim();
     if (!reflection || timerTarget === 0) { alert("Complete timer & write reflection first!"); return; }
+    const user = getCurrentUser();
+    if (!user) {
+        showNotification('❌ Please login first.', 'error');
+        return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const selectedTask = document.getElementById('practiceTaskDisplay').innerHTML;
+    const confidence = parseInt(document.getElementById('ratingConf').value);
+    const clarity = parseInt(document.getElementById('ratingClarity').value);
+    const fluency = parseInt(document.getElementById('ratingFluency').value);
+    const durationMinutes = timerTarget / 60;
+
+    savePracticeSessionToServer({
+        userEmail: user.email,
+        username: user.username,
+        date: today,
+        task: selectedTask,
+        durationMinutes,
+        notes: reflection,
+        confidence,
+        clarity,
+        fluency
+    });
     
     updateCurrentUser(u => {
-        const today = new Date().toISOString().split('T')[0];
         const lastDate = u.stats?.lastPracticeDate;
         const currentStreak = u.stats?.streak || 0;
 
@@ -426,21 +472,19 @@ document.getElementById('submitPracticeBtn').addEventListener('click', () => {
         u.practiceSessions = u.practiceSessions || [];
         u.practiceSessions.push({
             date: today,
-            task: document.getElementById('practiceTaskDisplay').innerHTML,
+            task: selectedTask,
             duration: timerTarget / 60 + ' min',
             notes: reflection,
             ratings: {
-                confidence: parseInt(document.getElementById('ratingConf').value),
-                clarity: parseInt(document.getElementById('ratingClarity').value),
-                fluency: parseInt(document.getElementById('ratingFluency').value)
+                confidence,
+                clarity,
+                fluency
             }
         });
-        u.stats.totalPracticeMinutes = (u.stats.totalPracticeMinutes || 0) + (timerTarget / 60);
+        u.stats.totalPracticeMinutes = (u.stats.totalPracticeMinutes || 0) + durationMinutes;
         u.stats.retention = Math.min(100, (u.stats.retention || 0) + 5);
         u.stats.confidence = ((u.stats.confidence || 0) + 
-            (parseInt(document.getElementById('ratingConf').value) + 
-             parseInt(document.getElementById('ratingClarity').value) + 
-             parseInt(document.getElementById('ratingFluency').value)) / 3) / 2;
+            (confidence + clarity + fluency) / 3) / 2;
         u.stats.lastPracticeDate = today;
 
         u.unlockedAchievements = u.unlockedAchievements || [];
