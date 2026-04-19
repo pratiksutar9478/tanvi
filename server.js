@@ -77,9 +77,13 @@ app.post('/api/chatbot', chatbotHandler);
 app.post('/api/analyze-speech', analyzeSpeechHandler);
 app.post('/api/practice-sessions', practiceSessionsHandler);
 
-// Serve index.html for all unmatched routes (SPA fallback)
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Serve index.html for SPA routes (after static files and API)
+app.use((req, res, next) => {
+    // Only serve index.html for non-API routes that don't have file extensions
+    if (!req.path.startsWith('/api') && !req.path.includes('.')) {
+        return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
+    next();
 });
 
 // Initialize and start server
