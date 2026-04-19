@@ -1,14 +1,13 @@
 const { Pool } = require('pg');
 
-if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is missing. Configure it in Vercel environment variables.');
-}
-
 let pool;
 let initPromise;
 
 function getPool() {
     if (!pool) {
+        if (!process.env.DATABASE_URL) {
+            throw new Error('DATABASE_URL is missing. Configure it in Vercel environment variables.');
+        }
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
             ssl: {
