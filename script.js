@@ -19,6 +19,24 @@ function setCurrentUser(email) { localStorage.setItem(CURRENT_USER_KEY, email); 
 function updateCurrentUser(updater) { const users = getUsers(); const email = localStorage.getItem(CURRENT_USER_KEY); if(email && users[email]) { users[email] = updater(users[email]); saveUsers(users); } }
 function getCurrentUsername() { const u = getCurrentUser(); return u ? u.username : null; }
 
+async function syncUserFromServer(email) {
+    try {
+        const response = await fetch(`/api/user/${email}`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.ok && data.user) {
+                let users = getUsers();
+                users[email] = data.user;
+                saveUsers(users);
+                return data.user;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to sync user from server:', error);
+    }
+    return null;
+}
+
 function showNotification(msg, type) { 
     const n = document.createElement('div'); 
     n.className = `notification ${type}`; 
@@ -141,41 +159,82 @@ document.getElementById('showSignupTab').onclick = () => {
     document.getElementById('showLoginTab').classList.remove('active');
 };
 
-document.getElementById('signupBtn').onclick = () => {
+document.getElementById('signupBtn').onclick = async () => {
     const email = document.getElementById('signupEmail').value.trim();
     const username = document.getElementById('signupUsername').value.trim();
     const password = document.getElementById('signupPassword').value.trim();
     if (!email || !username || !password) { showNotification("❌ All fields required!", "error"); return; }
     if (!email.includes('@')) { showNotification("❌ Valid email required", "error"); return; }
-    let users = getUsers();
-    if (users[email]) { showNotification("⚠️ Account already exists!", "error"); return; }
-    users[email] = {
-        email: email, username: username, password: password,
-        stats: { streak: 0, retention: 0, confidence: 0, totalPracticeMinutes: 0, lastPracticeDate: null },
-        practiceSessions: [],
-        goal: { type: 'Confidence', focus: 'Fluency', duration: 14, startDate: new Date().toISOString() },
-        unlockedAchievements: []
-    };
-    saveUsers(users);
-    showNotification("✅ Signup successful! Please login.", "success");
-    document.getElementById('showLoginTab').click();
-    document.getElementById('loginEmail').value = email;
-    document.getElementById('loginUsernameField').value = username;
-    document.getElementById('loginPasswordField').value = password;
+    
+    try {
+        const response = await fetch('/api/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                username: username,
+                password: password,
+                userData: {
+                    stats: { streak: 0, retention: 0, confidence: 0, totalPracticeMinutes: 0, lastPracticeDate: null },
+                    practiceSessions: [],
+                    goal: { type: 'Confidence', focus: 'Fluency', duration: 14, startDate: new Date().toISOString() },
+                    unlockedAchievements: []
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            showNotification(`❌ ${data.message}`, "error");
+            return;
+        }
+
+        showNotification("✅ Signup successful! Please login.", "success");
+        document.getElementById('showLoginTab').click();
+        document.getElementById('loginEmail').value = email;
+        document.getElementById('loginUsernameField').value = username;
+        document.getElementById('loginPasswordField').value = password;
+    } catch (error) {
+        console.error('Signup error:', error);
+        showNotification("❌ Signup failed", "error");
+    }
 };
 
-document.getElementById('loginBtn').onclick = () => {
+document.getElementById('loginBtn').onclick = async () => {
     const email = document.getElementById('loginEmail').value.trim();
     const username = document.getElementById('loginUsernameField').value.trim();
     const password = document.getElementById('loginPasswordField').value.trim();
     if (!email || !username || !password) { showNotification("❌ All fields required", "error"); return; }
-    const users = getUsers();
-    if (!users[email]) { showNotification("❌ No account found", "error"); return; }
-    if (users[email].password !== password) { showNotification("❌ Wrong password", "error"); return; }
-    if (users[email].username !== username) { showNotification("❌ Username mismatch", "error"); return; }
-    setCurrentUser(email);
-    showNotification(`✅ Welcome ${username}!`, "success");
-    showDashboard();
+    
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                username: username,
+                password: password
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            showNotification(`❌ ${data.message}`, "error");
+            return;
+        }
+
+        // Store user info locally and set as current user
+        let users = getUsers();
+        users[email] = data.user;
+        saveUsers(users);
+        setCurrentUser(email);
+        
+        showNotification(`✅ Welcome ${username}!`, "success");
+        showDashboard();
+    } catch (error) {
+        console.error('Login error:', error);
+        showNotification("❌ Login failed", "error");
+    }
 };
 
 document.getElementById('logoutBtn').onclick = () => {
@@ -184,7 +243,7 @@ document.getElementById('logoutBtn').onclick = () => {
     showLoginPage();
 };
 
-document.getElementById('saveGoalBtn').onclick = () => {
+document.getElementById('saveGoalBtn').onclick = async () => {
     updateCurrentUser(u => {
         u.goal = {
             type: document.getElementById('goalType').value,
@@ -194,11 +253,36 @@ document.getElementById('saveGoalBtn').onclick = () => {
         };
         return u;
     });
+    
+    // Sync with server
+    const user = getCurrentUser();
+    const email = localStorage.getItem(CURRENT_USER_KEY);
+    if (user && email) {
+        try {
+            await fetch(`/api/user/${email}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userData: user })
+            });
+        } catch (error) {
+            console.error('Failed to sync goal:', error);
+        }
+    }
+    
     showDashboard();
 };
 
 // ============ DASHBOARD REFRESH ============
-function refreshDashboard() {
+async function refreshDashboard() {
+    const email = localStorage.getItem(CURRENT_USER_KEY);
+    if (!email) {
+        showLoginPage();
+        return;
+    }
+    
+    // Sync with server to get latest data
+    await syncUserFromServer(email);
+    
     const user = getCurrentUser();
     if (!user) {
         showLoginPage();
@@ -426,7 +510,7 @@ document.getElementById('analyzeVoiceBtn').addEventListener('click', () => {
 });
 
 // ============ SUBMIT PRACTICE ==========
-document.getElementById('submitPracticeBtn').addEventListener('click', () => {
+document.getElementById('submitPracticeBtn').addEventListener('click', async () => {
     const reflection = document.getElementById('reflectionField').value.trim();
     if (!reflection || timerTarget === 0) { alert("Complete timer & write reflection first!"); return; }
     const user = getCurrentUser();
@@ -505,6 +589,22 @@ document.getElementById('submitPracticeBtn').addEventListener('click', () => {
         }
         return u;
     });
+    
+    // Sync user data with server
+    const updatedUser = getCurrentUser();
+    const email = localStorage.getItem(CURRENT_USER_KEY);
+    if (updatedUser && email) {
+        try {
+            await fetch(`/api/user/${email}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userData: updatedUser })
+            });
+        } catch (error) {
+            console.error('Failed to sync user data:', error);
+        }
+    }
+    
     showNotification("✅ Practice submitted! +5% retention!", "success");
     showDashboard();
 });
