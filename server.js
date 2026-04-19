@@ -268,10 +268,12 @@ app.get('/api/practice-sessions/:userEmail', async (req, res) => {
 });
 
 // ===== GROQ AI ENDPOINTS =====
+const hasGroqKey = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
+
 async function callGroqAPI(messages) {
     try {
-        if (!process.env.GROQ_API_KEY) {
-            throw new Error('GROQ_API_KEY not configured');
+        if (!hasGroqKey) {
+            throw new Error('GROQ_API_KEY missing');
         }
 
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -307,6 +309,22 @@ app.post('/api/analyze-speech', async (req, res) => {
 
         if (!speechText || !taskText) {
             return res.status(400).json({ ok: false, message: 'Missing speechText or taskText' });
+        }
+
+        if (!hasGroqKey) {
+            return res.json({
+                ok: true,
+                analysis: {
+                    overallScore: 72,
+                    clarityScore: 74,
+                    confidenceScore: 68,
+                    fluencyScore: 73,
+                    strengths: ['Clear attempt to stay on topic', 'Good effort and consistency'],
+                    improvements: ['Add more pauses to reduce filler words', 'Use stronger opening and closing lines'],
+                    tips: ['Practice 2 minutes daily with a timer', 'Record and replay to spot pacing issues']
+                },
+                source: 'fallback-no-groq-key'
+            });
         }
 
         const prompt = `You are a professional speaking coach. Analyze this speech and provide feedback. 
@@ -363,6 +381,14 @@ app.post('/api/chatbot', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Missing message' });
         }
 
+        if (!hasGroqKey) {
+            return res.json({
+                ok: true,
+                response: 'I can still coach you without cloud AI. Try this: speak for 60 seconds on one topic, avoid filler words, and end with one strong summary sentence.',
+                source: 'fallback-no-groq-key'
+            });
+        }
+
         const systemPrompt = `You are SpeakBoost Coach, an AI speaking coach assistant. You help users improve their public speaking, presentation skills, confidence, and communication abilities. You're friendly, encouraging, and provide practical tips.
 
 Provide helpful, concise responses focused on speaking improvement. If asked about topics unrelated to speaking, politely redirect to speaking skills.`;
@@ -406,6 +432,9 @@ function startServer(preferredPort, attempts = 0) {
 
 initDatabase()
     .then(() => {
+        if (!hasGroqKey) {
+            console.warn('GROQ_API_KEY is not set. Chatbot and AI analysis will use local fallback responses.');
+        }
         startServer(PORT);
     })
     .catch((error) => {
