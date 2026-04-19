@@ -63,9 +63,17 @@ async function initDatabase() {
 }
 
 // API routes
-app.use('/api', require('./api/health.js'));
-app.use('/api', require('./api/signup.js'));
-app.use('/api', require('./api/login.js'));
+const healthHandler = require('./api/health.js');
+const signupHandler = require('./api/signup.js');
+const loginHandler = require('./api/login.js');
+const chatbotHandler = require('./api/chatbot.js');
+const analyzeSpeechHandler = require('./api/analyze-speech.js');
+
+app.get('/api/health', healthHandler);
+app.post('/api/signup', signupHandler);
+app.post('/api/login', loginHandler);
+app.post('/api/chatbot', chatbotHandler);
+app.post('/api/analyze-speech', analyzeSpeechHandler);
 
 // Serve index.html for all unmatched routes (SPA fallback)
 app.get('*', (req, res) => {
