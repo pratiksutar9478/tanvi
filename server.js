@@ -267,6 +267,121 @@ app.get('/api/practice-sessions/:userEmail', async (req, res) => {
     }
 });
 
+// ===== GROQ AI ENDPOINTS =====
+async function callGroqAPI(messages) {
+    try {
+        if (!process.env.GROQ_API_KEY) {
+            throw new Error('GROQ_API_KEY not configured');
+        }
+
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: messages,
+                max_tokens: 500,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Groq API error');
+        }
+
+        const data = await response.json();
+        return data.choices[0].message.content;
+    } catch (error) {
+        console.error('Groq API error:', error);
+        throw error;
+    }
+}
+
+app.post('/api/analyze-speech', async (req, res) => {
+    try {
+        const { speechText, taskText } = req.body;
+
+        if (!speechText || !taskText) {
+            return res.status(400).json({ ok: false, message: 'Missing speechText or taskText' });
+        }
+
+        const prompt = `You are a professional speaking coach. Analyze this speech and provide feedback. 
+        
+Task: ${taskText}
+Speech: "${speechText}"
+
+Provide detailed analysis with:
+1. Overall score (0-100)
+2. Clarity score (0-100) - how clear and understandable
+3. Confidence score (0-100) - how confident the speaker sounds
+4. Fluency score (0-100) - how smoothly the speech flows
+5. Key strengths (2-3 bullet points)
+6. Areas for improvement (2-3 bullet points)
+7. Specific actionable tips
+
+Format your response as JSON with these exact keys: overallScore, clarityScore, confidenceScore, fluencyScore, strengths (array), improvements (array), tips (array)`;
+
+        const analysis = await callGroqAPI([
+            { role: 'user', content: prompt }
+        ]);
+
+        // Parse the response (handle both JSON and text formats)
+        let parsedAnalysis;
+        try {
+            const jsonMatch = analysis.match(/\{[\s\S]*\}/);
+            parsedAnalysis = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(analysis);
+        } catch (e) {
+            console.error('Failed to parse Groq response:', e);
+            // Fallback to basic structure if parsing fails
+            parsedAnalysis = {
+                overallScore: 75,
+                clarityScore: 75,
+                confidenceScore: 70,
+                fluencyScore: 75,
+                strengths: ['Good effort', 'Clear articulation'],
+                improvements: ['Practice more regularly', 'Work on pacing'],
+                tips: ['Record yourself for feedback', 'Practice in front of mirror']
+            };
+        }
+
+        res.json({ ok: true, analysis: parsedAnalysis });
+    } catch (error) {
+        console.error('Speech analysis failed:', error);
+        res.status(500).json({ ok: false, message: 'Failed to analyze speech', error: error.message });
+    }
+});
+
+app.post('/api/chatbot', async (req, res) => {
+    try {
+        const { message, conversationHistory = [] } = req.body;
+
+        if (!message) {
+            return res.status(400).json({ ok: false, message: 'Missing message' });
+        }
+
+        const systemPrompt = `You are SpeakBoost Coach, an AI speaking coach assistant. You help users improve their public speaking, presentation skills, confidence, and communication abilities. You're friendly, encouraging, and provide practical tips.
+
+Provide helpful, concise responses focused on speaking improvement. If asked about topics unrelated to speaking, politely redirect to speaking skills.`;
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory,
+            { role: 'user', content: message }
+        ];
+
+        const response = await callGroqAPI(messages);
+
+        res.json({ ok: true, response: response });
+    } catch (error) {
+        console.error('Chatbot failed:', error);
+        res.status(500).json({ ok: false, message: 'Failed to process message', error: error.message });
+    }
+});
+
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });

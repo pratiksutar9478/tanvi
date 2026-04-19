@@ -499,11 +499,57 @@ function analyzeSpeech(text, taskText) {
     return feedback;
 }
 
-document.getElementById('analyzeVoiceBtn').addEventListener('click', () => {
+async function getAIFeedback(text, taskText) {
+    try {
+        const response = await fetch('/api/analyze-speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                speechText: text,
+                taskText: taskText
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get AI feedback');
+        }
+
+        const data = await response.json();
+        const analysis = data.analysis;
+
+        let feedback = `<div style="text-align:center;"><span class="feedback-score ${analysis.overallScore >= 70 ? 'score-high' : (analysis.overallScore >= 50 ? 'score-mid' : 'score-low')}">🎯 AI Analysis - Overall Score: ${analysis.overallScore}/100</span></div>`;
+        feedback += `<div style="display:flex; justify-content:center; gap:10px; margin:10px 0;">
+            <span class="feedback-score ${analysis.clarityScore >= 70 ? 'score-high' : 'score-mid'}">Clarity: ${analysis.clarityScore}%</span>
+            <span class="feedback-score ${analysis.confidenceScore >= 70 ? 'score-high' : 'score-mid'}">Confidence: ${analysis.confidenceScore}%</span>
+            <span class="feedback-score ${analysis.fluencyScore >= 70 ? 'score-high' : 'score-mid'}">Fluency: ${analysis.fluencyScore}%</span>
+        </div>`;
+        
+        feedback += `<div><strong>✨ Strengths:</strong><br>`;
+        (analysis.strengths || []).forEach(s => { feedback += `• ${s}<br>`; });
+        feedback += `</div>`;
+        
+        feedback += `<div><strong>🎯 Areas to Improve:</strong><br>`;
+        (analysis.improvements || []).forEach(i => { feedback += `• ${i}<br>`; });
+        feedback += `</div>`;
+        
+        feedback += `<div><strong>💡 Tips:</strong><br>`;
+        (analysis.tips || []).forEach(t => { feedback += `• ${t}<br>`; });
+        feedback += `</div>`;
+
+        return feedback;
+    } catch (error) {
+        console.error('Failed to get AI feedback:', error);
+        return analyzeSpeech(text, taskText); // Fallback to local analysis
+    }
+}
+
+document.getElementById('analyzeVoiceBtn').addEventListener('click', async () => {
     const text = document.getElementById('voiceInput').value.trim();
     if (!text) { showNotification("❌ Please speak something first!", "error"); return; }
     const taskText = document.getElementById('activeTaskName').innerText;
-    const feedback = analyzeSpeech(text, taskText);
+    
+    showNotification("⏳ Analyzing your speech with AI...", "success");
+    const feedback = await getAIFeedback(text, taskText);
     document.getElementById('feedbackContent').innerHTML = feedback;
     document.getElementById('feedbackSection').classList.remove('hidden');
     showNotification("🤖 AI Analysis complete!", "success");
@@ -767,41 +813,61 @@ const chatbotResponses = {
     "default": "💬 I'm here to help! Try asking: 'motivation', 'tips', 'confidence', 'filler words', 'body language', 'stage fright', or 'help'!"
 };
 
-function getChatbotResponse(message) {
-    const lowerMsg = message.toLowerCase().trim();
-    
-    // Check for exact matches first
-    for (const [key, response] of Object.entries(chatbotResponses)) {
-        if (lowerMsg.includes(key) && key !== "default") {
-            return response;
+async function getChatbotResponse(message) {
+    try {
+        const response = await fetch('/api/chatbot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: message,
+                conversationHistory: []
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get chatbot response');
         }
+
+        const data = await response.json();
+        return data.response;
+    } catch (error) {
+        console.error('Chatbot error:', error);
+        // Fallback to basic responses
+        const lowerMsg = message.toLowerCase().trim();
+        if (lowerMsg.includes("hello") || lowerMsg.includes("hi")) {
+            return "👋 Hello! I'm your speaking coach. How can I help you today?";
+        }
+        if (lowerMsg.includes("motivation")) {
+            return "🔥 You're doing great! Every master was once a beginner. Keep showing up daily!";
+        }
+        if (lowerMsg.includes("tip")) {
+            return "💡 Pro Tip: Pause 2-3 seconds between key points. It makes you sound more confident!";
+        }
+        return "💬 I'm having trouble connecting to the AI. Please try again!";
     }
-    
-    // Check for common variations
-    if (lowerMsg.includes("how to") && lowerMsg.includes("speak")) {
-        return "🎤 Start with small topics, practice daily, record yourself, and join speaking groups like Toastmasters!";
-    }
-    if (lowerMsg.includes("thank")) {
-        return "🙏 You're welcome! Keep practicing and you'll see amazing progress!";
-    }
-    if (lowerMsg.includes("good") || lowerMsg.includes("great")) {
-        return "🌟 Awesome attitude! That positive mindset will take you far!";
-    }
-    
-    return chatbotResponses.default;
 }
 
-function sendChatMessage() {
+async function sendChatMessage() {
     const input = document.getElementById('chatInput');
     const message = input.value.trim();
     if (!message) return;
     
     const chatMessages = document.getElementById('chatMessages');
     chatMessages.innerHTML += `<div class="user-msg">${escapeHtml(message)}</div>`;
-    const reply = getChatbotResponse(message);
-    chatMessages.innerHTML += `<div class="bot-msg">${reply}</div>`;
+    
+    // Show loading indicator
+    chatMessages.innerHTML += `<div class="bot-msg">⏳ Thinking...</div>`;
     chatMessages.scrollTop = chatMessages.scrollHeight;
     input.value = '';
+    
+    try {
+        const reply = await getChatbotResponse(message);
+        chatMessages.innerHTML = chatMessages.innerHTML.replace('<div class="bot-msg">⏳ Thinking...</div>', `<div class="bot-msg">${reply}</div>`);
+    } catch (error) {
+        chatMessages.innerHTML = chatMessages.innerHTML.replace('<div class="bot-msg">⏳ Thinking...</div>', `<div class="bot-msg">Sorry, I encountered an error. Please try again!</div>`);
+    }
+    
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 function escapeHtml(text) {
