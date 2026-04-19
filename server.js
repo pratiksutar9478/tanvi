@@ -6,7 +6,7 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from public folder
+// Serve static files FIRST (before routes)
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
@@ -68,12 +68,14 @@ const signupHandler = require('./api/signup.js');
 const loginHandler = require('./api/login.js');
 const chatbotHandler = require('./api/chatbot.js');
 const analyzeSpeechHandler = require('./api/analyze-speech.js');
+const practiceSessionsHandler = require('./api/practice-sessions.js');
 
 app.get('/api/health', healthHandler);
 app.post('/api/signup', signupHandler);
 app.post('/api/login', loginHandler);
 app.post('/api/chatbot', chatbotHandler);
 app.post('/api/analyze-speech', analyzeSpeechHandler);
+app.post('/api/practice-sessions', practiceSessionsHandler);
 
 // Serve index.html for all unmatched routes (SPA fallback)
 app.get('*', (req, res) => {
