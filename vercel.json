@@ -1,4 +1,9 @@
 {
+
+
+
+
+  
   "version": 2,
   "builds": [
     {
@@ -12,11 +17,19 @@
       "dest": "/api/$1"
     },
     {
-      "src": "/(.*\\.(js|css|json|png|jpg|jpeg|gif|svg|ico|webp)$)",
-      "dest": "/$1"
+      "src": "/style.css",
+      "dest": "/style.css"
     },
     {
-      "src": "/",
+      "src": "/script.js",
+      "dest": "/script.js"
+    },
+    {
+      "src": "/index.html",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/(.*)",
       "dest": "/index.html"
     }
   ]
